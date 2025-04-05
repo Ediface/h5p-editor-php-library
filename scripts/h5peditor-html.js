@@ -32,11 +32,12 @@ ns.Html.prototype.inTags = function (value) {
  * @return {boolean}
  */
 ns.Html.prototype.inButtons = function (button) {
-  return (H5PIntegration.editor !== undefined && H5PIntegration.editor.wysiwygButtons !== undefined && H5PIntegration.editor.wysiwygButtons.indexOf(button) !== -1);
+  return (window.H5PIntegration !== undefined && window.H5PIntegration.editor !== undefined && window.H5PIntegration.editor.wysiwygButtons !== undefined && window.H5PIntegration.editor.wysiwygButtons.indexOf(button) !== -1);
 };
 
 ns.Html.prototype.getCKEditorConfig = function () {
   const config = {
+    updateSourceElementOnDestroy: true,
     plugins: ['Essentials', 'Paragraph'],
     alignment: { options: ["left", "center", "right"] },
     toolbar: [],
@@ -155,9 +156,27 @@ ns.Html.prototype.getCKEditorConfig = function () {
   const inserts = [];
   const insertsPlugins = [];
   if (this.inTags('img')) {
-    // TODO: Include toolbar functionality to insert and edit images
-    // For now, we just include the plugin to prevent data loss
-    insertsPlugins.push('Image');
+    // Enable image upload and editing capabilities
+    insertsPlugins.push('Image', 'ImageToolbar', 'ImageStyle', 'ImageUpload');
+    inserts.push('uploadImage');
+    
+    // Configure image toolbar and styles
+    config.image = {
+      toolbar: [
+        'imageStyle:inline',
+        'imageStyle:block',
+        'imageStyle:side',
+        '|',
+        'imageTextAlternative'
+      ],
+      styles: {
+        options: [
+          { name: 'inline', title: 'In line', icon: 'full', className: 'image-style-inline' },
+          { name: 'block', title: 'Centered', icon: 'full', className: 'image-style-block' },
+          { name: 'side', title: 'Side', icon: 'full', className: 'image-style-side' }
+        ]
+      }
+    };
   }
   if (this.inTags("hr")) {
     inserts.push("horizontalLine");
@@ -257,7 +276,7 @@ ns.Html.prototype.getCKEditorConfig = function () {
      * @param {string} prop Property name
      */
     const setValues = function (values, prop) {
-      options = [];
+      let options = [];
       for (let i = 0; i < values.length; i++) {
         options.push(values[i]);
       }
@@ -384,15 +403,34 @@ ns.Html.prototype.getCKEditorConfig = function () {
     // Without this, empty divs get deleted on init of cke
     config.plugins.push('GeneralHtmlSupport');
     config.htmlSupport = {
-      allow: [{
-        name: 'div',
-        attributes: true,
-        classes: true,
-        styles: true
-      }]
+      allow: [
+        {
+          name: 'div',
+          attributes: true,
+          classes: true,
+          styles: true
+        },
+        // Add explicit support for image tags with base64 data
+        {
+          name: 'img',
+          attributes: {
+            src: true,
+            alt: true,
+            width: true,
+            height: true
+          }
+        },
+        // Support figure elements for images
+        {
+          name: 'figure',
+          attributes: true,
+          classes: true,
+          styles: true
+        }
+      ]
     };
   }
-
+  
   return config;
 };
 
@@ -414,6 +452,9 @@ ns.Html.prototype.appendTo = function ($wrapper) {
   this.ckEditorConfig = this.getCKEditorConfig();
 
   this.$input.focus(function () {
+    // Blur is not fired on destroy. Therefore we need to keep track of it!
+    var blurFired = false;
+
     // Remove placeholder
     that.$placeholder = that.$item.find('.h5peditor-ckeditor-placeholder').detach();
 
@@ -463,9 +504,39 @@ ns.Html.prototype.appendTo = function ($wrapper) {
           return (ratio * innerHeight * 0.85) + 'px';
         }
 
+        // Configure a Base64 image upload adapter
+        if (that.inTags('img') && editor.plugins.has('FileRepository')) {
+          editor.plugins.get('FileRepository').createUploadAdapter = (loader) => {
+            // Create custom adapter that converts images to base64
+            return {
+              upload: function() {
+                return loader.file.then(file => {
+                  return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.addEventListener('load', () => {
+                      const base64Data = reader.result;
+                      resolve({ 
+                        default: base64Data,
+                        attributes: {
+                          src: base64Data
+                        }
+                      });
+                    });
+                    reader.addEventListener('error', () => {
+                      reject('Error reading file');
+                    });
+                    reader.readAsDataURL(file);
+                  });
+                });
+              },
+              abort: function() {}
+            };
+          };
+        }
+
         that.ckeditor = editor;
         const editable = editor.ui.view.editable;
-        editorElement = editable.element;
+        let editorElement = editable.element;
         editor.ui.view.element.style.maxWidth = that.inputWidth + 'px';
         editorElement.style.maxHeight = getEditorHeight();
 
@@ -478,10 +549,12 @@ ns.Html.prototype.appendTo = function ($wrapper) {
         editor.ui.view.stickyPanel.unbind('isActive');
         editor.ui.view.stickyPanel.isActive = false;
 
-        // Remove overflow protection on startup
+        // Ensure all base64 images are properly preserved
         let initialData = editor.getData();
-        if (initialData.includes('<div class="table-overflow-protection"')) {
-          initialData = initialData.replace(/<div class=\"table-overflow-protection\">.*<\/div>/, '');
+        
+        // Remove overflow protection on startup only if present
+        if (initialData.includes('table-overflow-protection')) {
+          initialData = initialData.replace(/<div class="table-overflow-protection">.*<\/div>/, '');
           editor.setData(initialData);
         }
 
@@ -502,24 +575,45 @@ ns.Html.prototype.appendTo = function ($wrapper) {
         editor.editing.view.focus();
 
         editor.on('focus', function () {
+          blurFired = false;
           editorElement.style.maxHeight = getEditorHeight();
         });
 
         editor.once('destroy', function () {
-
-          // We always need to run validate when removing CKE5 to have the .$input properly populated.
-          // CKE5 cannot do this as the data has to be massaged/filtered before updating the .$input.
-          const value = that.validate();
-          delete that.ckeditor; // Prevent usage of destroyed CK beyond this point
+          // In some cases, the blur event is not fired. Need to be sure it is, so that
+          // validation and saving is done
+          if (!blurFired) {
+            blur();
+          }
 
           // Display placeholder if:
           // -- The value held by the field is empty AND
           // -- The value shown in the UI is empty AND
           // -- A placeholder is defined
-          if (that.$placeholder.length !== 0 && (value === undefined || value.length === 0)) {
+          const value = editor.getData();
+          if (that.$placeholder.length !== 0 && (value === undefined || value.length === 0) && (that.value === undefined || that.value.length === 0)) {
             that.$placeholder.appendTo(that.$item.find('.ckeditor'));
           }
+
+          // Since validate() is not always run,
+          // make sure tabe overflow protection is added always when editor is destroyed
+          if (value.includes('table') && !value.includes('table-overflow-protection')) {
+            that.value = value + '<div class="table-overflow-protection"></div>';
+            that.setValue(that.field, that.value);
+            that.$input.html(that.value).change();
+          }
         });
+
+        var blur = function () {
+          blurFired = true;
+
+          // Do not validate if the field has been hidden.
+          if (that.$item.is(':visible')) {
+            that.validate();
+          }
+        };
+
+        editor.on('blur', blur);
       })
       .catch(error => {
         throw new Error('Error loading CKEditor: ' + error);
@@ -552,7 +646,7 @@ ns.Html.prototype.createHtml = function () {
     input += '<span class="h5peditor-ckeditor-placeholder">' + this.field.placeholder + '</span>';
   }
   // Add overflow protection if table
-  if (this.field.tags.includes('table') && !input.includes('<div class="table-overflow-protection"')) {
+  if (this.field.tags.includes('table') && !input.includes('table-overflow-protection')) {
     input += '<div class="table-overflow-protection"></div>';
   }
   input += '</div>';
@@ -571,8 +665,11 @@ ns.Html.prototype.validate = function () {
     this.$input.addClass('error');
   }
 
-  // Get contents from CKEditor5
-  let value = this.ckeditor ? this.ckeditor.getData() : this.$input.html();
+  // Get contents from editor
+  // If there are more than one ckeditor, getData() might be undefined when ckeditor is not
+  let value = ((this.ckeditor !== undefined && this.ckeditor.getData() !== undefined)
+    ? this.ckeditor.getData()
+    : this.$input.html());
 
   value = value
     // Remove placeholder text if any:
@@ -595,10 +692,29 @@ ns.Html.prototype.validate = function () {
   // the tag's content.  So if we get an unallowed container, the contents
   // will remain, without the container.
   $value.find('*').each(function () {
+    const $this = ns.$(this);
     if (!that.inTags(this.tagName)) {
-      ns.$(this).replaceWith(ns.$(this).contents());
+      $this.replaceWith($this.contents());
+    }
+    // Make sure images have their src attribute preserved
+    else if (this.tagName.toLowerCase() === 'img') {
+      // Ensure src is preserved (especially for base64 data)
+      const src = $this.attr('src');
+      if (src) {
+        // If we found a base64 image, make sure it's explicitly preserved
+        if (src.startsWith('data:')) {
+          // Keep the image as is with its base64 data
+          that.tags.push('img');
+        }
+      }
     }
   });
+
+  // Add overflow protection if chance of aligned tables
+  if(that.inTags('table') && !value.includes('table-overflow-protection')) {
+    this.$input.append('<div class="table-overflow-protection"></div>');
+    $value.append('<div class="table-overflow-protection"></div>');
+  }
 
   value = $value.html();
 
@@ -610,13 +726,9 @@ ns.Html.prototype.validate = function () {
     this.$input.removeClass('error');
   }
 
-  if (value.includes('<table') && !value.includes('<div class="table-overflow-protection"')) {
-    value = value + '<div class="table-overflow-protection"></div>';
-  }
-
   this.value = value;
   this.setValue(this.field, value);
-  this.$input.html(value).change(); // Trigger change event.
+  this.$input.change(); // Trigger change event.
 
   return value;
 };
