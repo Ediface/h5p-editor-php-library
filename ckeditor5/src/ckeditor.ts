@@ -30,7 +30,8 @@ import {
 	ImageCaption,
 	ImageStyle,
 	ImageToolbar,
-	ImageUpload
+	ImageUpload,
+	ImageResize
 } from '@ckeditor/ckeditor5-image';
 import { Indent, IndentBlock } from '@ckeditor/ckeditor5-indent';
 import { AutoLink, Link } from '@ckeditor/ckeditor5-link';
@@ -73,6 +74,7 @@ class Editor extends ClassicEditor {
 		HorizontalLine,
 		Image,
 		ImageCaption,
+		ImageResize,
 		ImageStyle,
 		ImageToolbar,
 		ImageUpload,
@@ -130,7 +132,30 @@ class Editor extends ClassicEditor {
 				'imageStyle:inline',
 				'imageStyle:block',
 				'imageStyle:side'
-			]
+			],
+			resizeOptions: [
+				{
+					name: 'resizeImage:original',
+					label: 'Original',
+					value: null
+				},
+				{
+					name: 'resizeImage:25',
+					label: '25%',
+					value: '25'
+				},
+				{
+					name: 'resizeImage:50',
+					label: '50%',
+					value: '50'
+				},
+				{
+					name: 'resizeImage:75',
+					label: '75%',
+					value: '75'
+				}
+			],
+			resizeUnit: '%'
 		},
 		table: {
 			contentToolbar: [

@@ -20,7 +20,7 @@
     "@ckeditor/ckeditor5-highlight": "43.3.0",
     "@ckeditor/ckeditor5-horizontal-line": "43.3.0",
     "@ckeditor/ckeditor5-html-support": "43.3.0",
-    "@ckeditor/ckeditor5-image": "43.3.0",
+    "@ckeditor/ckeditor5-image": "^43.3.0",
     "@ckeditor/ckeditor5-indent": "43.3.0",
     "@ckeditor/ckeditor5-link": "43.3.0",
     "@ckeditor/ckeditor5-list": "43.3.0",
@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@ckeditor/ckeditor5-core": "43.3.0",
-    "@ckeditor/ckeditor5-dev-translations": "^32.1.2",
+    "@ckeditor/ckeditor5-dev-translations": "^43.0.1",
     "@ckeditor/ckeditor5-dev-utils": "^32.1.2",
     "@ckeditor/ckeditor5-theme-lark": "43.3.0",
     "css-loader": "^5.2.7",

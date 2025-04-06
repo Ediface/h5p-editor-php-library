@@ -157,7 +157,7 @@ ns.Html.prototype.getCKEditorConfig = function () {
   const insertsPlugins = [];
   if (this.inTags('img')) {
     // Enable image upload and editing capabilities
-    insertsPlugins.push('Image', 'ImageToolbar', 'ImageStyle', 'ImageUpload');
+    insertsPlugins.push('Image', 'ImageToolbar', 'ImageStyle', 'ImageUpload', 'ImageResize');
     inserts.push('uploadImage');
     
     // Configure image toolbar and styles
@@ -167,7 +167,9 @@ ns.Html.prototype.getCKEditorConfig = function () {
         'imageStyle:block',
         'imageStyle:side',
         '|',
-        'imageTextAlternative'
+        'imageTextAlternative',
+        '|',
+        'resizeImage'
       ],
       styles: {
         options: [
@@ -175,7 +177,30 @@ ns.Html.prototype.getCKEditorConfig = function () {
           { name: 'block', title: 'Centered', icon: 'full', className: 'image-style-block' },
           { name: 'side', title: 'Side', icon: 'full', className: 'image-style-side' }
         ]
-      }
+      },
+      resizeOptions: [
+        {
+          name: 'resizeImage:original',
+          label: 'Original',
+          value: null
+        },
+        {
+          name: 'resizeImage:25',
+          label: '25%',
+          value: '25'
+        },
+        {
+          name: 'resizeImage:50',
+          label: '50%',
+          value: '50'
+        },
+        {
+          name: 'resizeImage:75',
+          label: '75%',
+          value: '75'
+        }
+      ],
+      resizeUnit: '%'
     };
   }
   if (this.inTags("hr")) {
@@ -410,14 +435,17 @@ ns.Html.prototype.getCKEditorConfig = function () {
           classes: true,
           styles: true
         },
-        // Add explicit support for image tags with base64 data
+        // Add explicit support for image tags with base64 data and resize attributes
         {
           name: 'img',
           attributes: {
             src: true,
             alt: true,
             width: true,
-            height: true
+            height: true,
+            style: {
+              pattern: /^(width|height|max-width|max-height):.+$/
+            }
           }
         },
         // Support figure elements for images
@@ -503,37 +531,144 @@ ns.Html.prototype.appendTo = function ($wrapper) {
 
           return (ratio * innerHeight * 0.85) + 'px';
         }
-
-        // Configure a Base64 image upload adapter
+        
+        // Configure a simple upload adapter
         if (that.inTags('img') && editor.plugins.has('FileRepository')) {
           editor.plugins.get('FileRepository').createUploadAdapter = (loader) => {
-            // Create custom adapter that converts images to base64
+            // Check if H5PEditor.FileUploader is available
+            if (window.H5PEditor && window.H5PEditor.FileUploader) {
+              // Create a simple upload adapter that sends images to the server using H5PEditor.FileUploader
+              return {
+                // Store uploader instance to be able to abort it later
+                _uploader: null,
+                
+                upload: function() {
+                  return loader.file.then(file => {
+                    return new Promise((resolve, reject) => {
+                      // Create a field config for the FileUploader that sets proper image mime types
+                      const fieldConfig = {
+                        type: 'image',
+                        mimes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+                      };
+                      
+                      // Initialize the H5P File Uploader
+                      const uploader = new window.H5PEditor.FileUploader(fieldConfig);
+                      this._uploader = uploader;
+                      
+                      // Listen for upload progress
+                      uploader.on('uploadProgress', (progress) => {
+                        loader.uploadTotal = 100;
+                        loader.uploaded = progress * 100;
+                      });
+                      
+                      // Listen for upload completion
+                      uploader.on('uploadComplete', (result) => {
+                        if (result.error) {
+                          console.error('Upload failed:', result.error);
+                          // Fall back to base64 encoding if there's an error
+                          fallbackToBase64(file, resolve, reject);
+                          return;
+                        }
+                        
+                        // The actual response has a nested structure:
+                        // { data: { error: null, data: { path: "images/file.png#tmp" } } }
+                        if (result.data && result.data.data && result.data.data.path) {
+                          const path = result.data.data.path;
+                          console.log('Image uploaded successfully:', path);
+                          resolve({
+                            default: H5P.getPath(path, H5PEditor.contentId)
+                          });
+                        } 
+                        else if (result.data && result.data.path) {
+                          // Fallback to original format if response structure changes
+                          console.log('Image uploaded successfully (direct path):', result.data.path);
+                          resolve({
+                            default: H5P.getPath(result.data.path, H5PEditor.contentId) 
+                          });
+                        }
+                        else {
+                          console.warn('Invalid response from server:', result);
+                          // Fall back to base64 encoding if response is invalid
+                          fallbackToBase64(file, resolve, reject);
+                        }
+                      });
+                      
+                      // Handle upload errors
+                      uploader.on('uploadFailed', () => {
+                        console.error('Upload failed');
+                        // Fall back to base64 encoding if there's an error
+                        fallbackToBase64(file, resolve, reject);
+                      });
+                      
+                      // Start the upload
+                      uploader.upload(file, file.name);
+                    });
+                  });
+                },
+                
+                abort: function() {
+                  // Currently no way to abort the FileUploader directly
+                  // The H5PEditor.FileUploader doesn't expose an abort method
+                }
+              };
+            }
+            
+            // Fallback to base64 encoder if H5PEditor.FileUploader is not available
             return {
               upload: function() {
                 return loader.file.then(file => {
                   return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.addEventListener('load', () => {
-                      const base64Data = reader.result;
-                      resolve({ 
-                        default: base64Data,
-                        attributes: {
-                          src: base64Data
-                        }
-                      });
-                    });
-                    reader.addEventListener('error', () => {
-                      reject('Error reading file');
-                    });
-                    reader.readAsDataURL(file);
+                    fallbackToBase64(file, resolve, reject);
                   });
                 });
               },
               abort: function() {}
             };
           };
+          
+          // Helper function to fall back to base64 encoding when server upload fails
+          function fallbackToBase64(file, resolve, reject) {
+            console.log('Falling back to base64 encoding for image');
+            const reader = new FileReader();
+            reader.addEventListener('load', () => {
+              const base64Data = reader.result;
+              resolve({ 
+                default: base64Data,
+                attributes: {
+                  src: base64Data
+                }
+              });
+            });
+            reader.addEventListener('error', () => {
+              reject('Error reading file for base64 conversion');
+            });
+            reader.readAsDataURL(file);
+          }
         }
-
+        
+        // Add CSS for image resize handles if they don't exist
+        if (that.inTags('img') && editor.plugins.has('ImageResize')) {
+          const styleElement = document.createElement('style');
+          styleElement.textContent = `
+            .ck-content .image > img {
+              /* Override the default image width when it is resized */
+              width: 100%;
+              height: auto;
+            }
+            
+            /* Make the resize handles more visible */
+            .ck-content .image.ck-widget_with-resizer .ck-widget__resizer {
+              border: 1px solid #1a73e8;
+            }
+            
+            .ck-content .image.ck-widget_with-resizer .ck-widget__resizer__handle {
+              background: #1a73e8;
+              border: 2px solid white;
+            }
+          `;
+          document.head.appendChild(styleElement);
+        }
+        
         that.ckeditor = editor;
         const editable = editor.ui.view.editable;
         let editorElement = editable.element;
@@ -618,7 +753,7 @@ ns.Html.prototype.appendTo = function ($wrapper) {
       .catch(error => {
         throw new Error('Error loading CKEditor: ' + error);
       });
-    });
+  });
 
   // Always preload the first CKEditor field to avoid focus problems when the
   // editor is opened inside an iframe and focus has to be set by a human made
@@ -706,6 +841,21 @@ ns.Html.prototype.validate = function () {
           // Keep the image as is with its base64 data
           that.tags.push('img');
         }
+      }
+      
+      // Preserve width, height and style attributes for resized images
+      const width = $this.attr('width');
+      const height = $this.attr('height');
+      const style = $this.attr('style');
+      
+      if (width) {
+        $this.attr('width', width);
+      }
+      if (height) {
+        $this.attr('height', height);
+      }
+      if (style && /^(width|height|max-width|max-height):.+$/.test(style)) {
+        $this.attr('style', style);
       }
     }
   });
