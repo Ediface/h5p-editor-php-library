@@ -38,7 +38,7 @@ ns.Html.prototype.inButtons = function (button) {
 ns.Html.prototype.getCKEditorConfig = function () {
   const config = {
     updateSourceElementOnDestroy: true,
-    plugins: ['Essentials', 'underline', 'fontsize', 'fontColor', 'fontBackgroundColor', 'Paragraph'],
+    plugins: ['Essentials', 'Paragraph'],
     alignment: { options: ["left", "center", "right"] },
     toolbar: [],
   };
