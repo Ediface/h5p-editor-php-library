@@ -14,9 +14,6 @@ ns.Html = function (parent, field, params, setValue) {
   this.value = params;
   this.setValue = setValue;
   this.tags = ns.$.merge(['br'], (this.field.tags || this.defaultTags));
-  
-  // Track uploaded images to ensure they're persisted
-  this.uploadedImages = [];
 };
 ns.Html.first = true;
 
@@ -41,7 +38,7 @@ ns.Html.prototype.inButtons = function (button) {
 ns.Html.prototype.getCKEditorConfig = function () {
   const config = {
     updateSourceElementOnDestroy: true,
-    plugins: ['Essentials', 'Underline', 'Paragraph'],
+    plugins: ['Essentials', 'underline', 'fontsize', 'fontColor', 'fontBackgroundColor', 'Paragraph'],
     alignment: { options: ["left", "center", "right"] },
     toolbar: [],
   };
@@ -103,63 +100,6 @@ ns.Html.prototype.getCKEditorConfig = function () {
   // Alignment is added to all wysiwygs
   config.plugins.push('Alignment');
   config.toolbar.push('|', 'alignment');
-
-  // Font size, font color, and font background color
-  config.toolbar.push('|', 'fontSize', 'fontColor', 'fontBackgroundColor');
-  
-  // Default font size configuration
-  config.fontSize = {
-    options: [
-      'tiny',
-      'small',
-      'default',
-      'big',
-      'huge'
-    ],
-    supportAllValues: true
-  };
-  
-  // Default font color configuration
-  config.fontColor = {
-    colors: [
-      { color: 'hsl(0, 0%, 0%)', label: 'Black' },
-      { color: 'hsl(0, 0%, 30%)', label: 'Dim grey' },
-      { color: 'hsl(0, 0%, 60%)', label: 'Grey' },
-      { color: 'hsl(0, 0%, 90%)', label: 'Light grey' },
-      { color: 'hsl(0, 0%, 100%)', label: 'White', hasBorder: true },
-      { color: 'hsl(0, 75%, 60%)', label: 'Red' },
-      { color: 'hsl(30, 75%, 60%)', label: 'Orange' },
-      { color: 'hsl(60, 75%, 60%)', label: 'Yellow' },
-      { color: 'hsl(90, 75%, 60%)', label: 'Light green' },
-      { color: 'hsl(120, 75%, 60%)', label: 'Green' },
-      { color: 'hsl(150, 75%, 60%)', label: 'Aqua' },
-      { color: 'hsl(180, 75%, 60%)', label: 'Turquoise' },
-      { color: 'hsl(210, 75%, 60%)', label: 'Light blue' },
-      { color: 'hsl(240, 75%, 60%)', label: 'Blue' },
-      { color: 'hsl(270, 75%, 60%)', label: 'Purple' }
-    ]
-  };
-  
-  // Default font background color configuration
-  config.fontBackgroundColor = {
-    colors: [
-      { color: 'hsl(0, 0%, 0%)', label: 'Black' },
-      { color: 'hsl(0, 0%, 30%)', label: 'Dim grey' },
-      { color: 'hsl(0, 0%, 60%)', label: 'Grey' },
-      { color: 'hsl(0, 0%, 90%)', label: 'Light grey' },
-      { color: 'hsl(0, 0%, 100%)', label: 'White', hasBorder: true },
-      { color: 'hsl(0, 75%, 60%)', label: 'Red' },
-      { color: 'hsl(30, 75%, 60%)', label: 'Orange' },
-      { color: 'hsl(60, 75%, 60%)', label: 'Yellow' },
-      { color: 'hsl(90, 75%, 60%)', label: 'Light green' },
-      { color: 'hsl(120, 75%, 60%)', label: 'Green' },
-      { color: 'hsl(150, 75%, 60%)', label: 'Aqua' },
-      { color: 'hsl(180, 75%, 60%)', label: 'Turquoise' },
-      { color: 'hsl(210, 75%, 60%)', label: 'Light blue' },
-      { color: 'hsl(240, 75%, 60%)', label: 'Blue' },
-      { color: 'hsl(270, 75%, 60%)', label: 'Purple' }
-    ]
-  };
 
   // Paragraph styles
   const paragraph = [];
@@ -350,6 +290,7 @@ ns.Html.prototype.getCKEditorConfig = function () {
   if (this.field.font !== undefined) {
     // Create wrapper for text styling options
     var styles = [];
+    var colors = [];
     this.tags.push('span');
 
     /**
@@ -398,8 +339,9 @@ ns.Html.prototype.getCKEditorConfig = function () {
 
     // Font size chooser
     if (this.field.font.size) {
-      // fontSize plugin and toolbar item already added unconditionally
-      // Only override configuration if field-specific config is provided
+      styles.push('fontSize');
+      config.plugins.push('FontSize');
+
       let fontSizes = [];
       const convertToEm = (percent) => parseFloat(percent) / 100 + 'em';
 
@@ -450,8 +392,9 @@ ns.Html.prototype.getCKEditorConfig = function () {
 
     // Text color chooser
     if (this.field.font.color) {
-      // fontColor plugin and toolbar item already added unconditionally
-      // Only override configuration if field-specific config is provided
+      colors.push('fontColor');
+      config.plugins.push('FontColor');
+
       if (this.field.font.color instanceof Array) {
         config.fontColor = { colors: getColors(this.field.font.color) };
       }
@@ -459,18 +402,21 @@ ns.Html.prototype.getCKEditorConfig = function () {
 
     // Text background color chooser
     if (this.field.font.background) {
-      // fontBackgroundColor plugin and toolbar item already added unconditionally
-      // Only override configuration if field-specific config is provided
+      colors.push('fontBackgroundColor');
+      config.plugins.push('FontBackgroundColor');
+
       if (this.field.font.background instanceof Array) {
-        config.fontBackgroundColor = { colors: getColors(this.field.font.background) };
+        config.fontBackgroundColor = { colors: getColors(this.field.font.color) };
       }
     }
 
-    // Add the text styling options (only fontFamily if present, fontSize/fontColor/fontBackgroundColor already added)
+    // Add the text styling options
     if (styles.length) {
       config.toolbar.push(...styles);
     }
-    // Note: colors array is no longer used since fontColor and fontBackgroundColor are added unconditionally
+    if (colors.length) {
+      config.toolbar.push(...colors);
+    }
   }
 
   if (this.field.enterMode === 'p') {
@@ -629,30 +575,15 @@ ns.Html.prototype.appendTo = function ($wrapper) {
                         if (result.data && result.data.data && result.data.data.path) {
                           const path = result.data.data.path;
                           console.log('Image uploaded successfully:', path);
-                          
-                          // Track this uploaded image for persistence
-                          that.uploadedImages.push({
-                            path: path,
-                            url: H5P.getPath(path, H5PEditor.contentId)
-                          });
-                          
                           resolve({
                             default: H5P.getPath(path, H5PEditor.contentId)
                           });
                         } 
                         else if (result.data && result.data.path) {
                           // Fallback to original format if response structure changes
-                          const path = result.data.path;
-                          console.log('Image uploaded successfully (direct path):', path);
-                          
-                          // Track this uploaded image for persistence
-                          that.uploadedImages.push({
-                            path: path,
-                            url: H5P.getPath(path, H5PEditor.contentId)
-                          });
-                          
+                          console.log('Image uploaded successfully (direct path):', result.data.path);
                           resolve({
-                            default: H5P.getPath(path, H5PEditor.contentId) 
+                            default: H5P.getPath(result.data.path, H5PEditor.contentId) 
                           });
                         }
                         else {
@@ -915,44 +846,6 @@ ns.Html.prototype.validate = function () {
           // Keep the image as is with its base64 data
           that.tags.push('img');
         }
-        // Check if this is a temporary H5P file that needs to be persisted
-        else if (src.includes('#tmp')) {
-          // Extract the path from the full URL
-          // URL format: http://domain/h5p/temp-files/contentId/images/file.png#tmp
-          // We need to get just the "images/file.png#tmp" part
-          let imagePath = src;
-          
-          // Try to extract just the relative path if it's a full URL
-          const pathMatch = src.match(/\/h5papi\/temp-files\/\d+\/(.+)/);
-          if (pathMatch && pathMatch[1]) {
-            imagePath = pathMatch[1];
-          }
-          
-          // Store original path with #tmp for tracking
-          const pathWithTmp = imagePath.includes('#tmp') ? imagePath : imagePath + '#tmp';
-          
-          // Remove #tmp suffix to get the permanent path
-          const permanentPath = pathWithTmp.replace('#tmp', '');
-          const permanentUrl = src.replace('#tmp', '');
-          
-          // Update the src to point to the permanent location
-          $this.attr('src', permanentUrl);
-          
-          // Track this image so backend knows to keep it
-          if (!that.uploadedImages.find(img => img.path === pathWithTmp || img.path === permanentPath)) {
-            that.uploadedImages.push({
-              path: permanentPath,
-              url: permanentUrl,
-              originalPath: pathWithTmp
-            });
-          }
-          
-          console.log('Processing temporary image:', {
-            original: src,
-            permanent: permanentUrl,
-            path: permanentPath
-          });
-        }
       }
       
       // Preserve width, height and style attributes for resized images
@@ -990,42 +883,6 @@ ns.Html.prototype.validate = function () {
 
   this.value = value;
   this.setValue(this.field, value);
-  
-  // Attach uploaded images metadata to help backend process files
-  // This allows the backend to know which temporary files to keep and convert to permanent
-  if (this.uploadedImages.length > 0) {
-    // Store images info in a custom property that backend can access
-    if (!this.params) {
-      this.params = {};
-    }
-    
-    // Extract just the paths for backend processing
-    const imagePaths = this.uploadedImages.map(img => {
-      // Get the relative path without #tmp
-      let path = img.path;
-      if (path.includes('#tmp')) {
-        path = path.replace('#tmp', '');
-      }
-      return path;
-    });
-    
-    // Store as metadata on the parent if possible
-    // This helps the backend know about embedded images
-    if (this.parent && this.parent.params) {
-      if (!this.parent.params._h5pEmbeddedImages) {
-        this.parent.params._h5pEmbeddedImages = [];
-      }
-      // Add images from this field, avoiding duplicates
-      imagePaths.forEach(path => {
-        if (!this.parent.params._h5pEmbeddedImages.includes(path)) {
-          this.parent.params._h5pEmbeddedImages.push(path);
-        }
-      });
-    }
-    
-    console.log('Tracked embedded images for persistence:', imagePaths);
-  }
-  
   this.$input.change(); // Trigger change event.
 
   return value;
